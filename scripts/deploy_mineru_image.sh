@@ -11,15 +11,33 @@ VLM_MODELS_DIR="${VLM_MODELS_DIR:-}"
 # Same default tree as scripts/download_mineru_models.sh: ./mineru-models/pipeline, ./mineru-models/vlm
 _DEFAULT_MODELS_ROOT="${PWD}/mineru-models"
 DATA_DIR="${DATA_DIR:-$PWD/mineru-data}"
-GPU_ARGS="${GPU_ARGS:---gpus all}"
 EXTRA_DOCKER_ARGS="${EXTRA_DOCKER_ARGS:-}"
 EXTRA_MINERU_API_ARGS="${EXTRA_MINERU_API_ARGS:-}"
 RECREATE="${RECREATE:-true}"
 PULL_IMAGE="${PULL_IMAGE:-true}"
 
+_is_cpu_image() {
+    [[ "${1}" =~ (:|/)mineru-[0-9.]+-cpu$|:cpu-latest$ ]]
+}
+
+# Use ${VAR-default} (not :=) so GPU_ARGS="" disables GPU passthrough.
+if [[ -z "${GPU_ARGS+x}" ]]; then
+    if _is_cpu_image "${IMAGE}"; then
+        GPU_ARGS=""
+    else
+        GPU_ARGS="--gpus all"
+    fi
+fi
+
 usage() {
     cat <<'EOF'
 Deploy the MinerU API runtime image (mineru-api service).
+
+GPU and CPU images share the same volume layout. For CPU tags (*-cpu, cpu-latest),
+GPU_ARGS defaults to empty, mineru-api gets --backend pipeline --device cpu,
+and VLM weights are optional (pipeline-only download is enough).
+
+GPU image deploy still requires both pipeline/ and vlm/ unless you mount VLM yourself.
 
 Environment variables:
   IMAGE                 Docker image to run. Default: ghcr.io/jimmysitu/mineru-deploy:latest
@@ -29,7 +47,8 @@ Environment variables:
   PIPELINE_MODELS_DIR   Pipeline weights dir (default: MODELS_DIR/pipeline if unset)
   VLM_MODELS_DIR        VLM weights dir (default: MODELS_DIR/vlm if unset)
   DATA_DIR              Host data/output directory. Default: ./mineru-data
-  GPU_ARGS              Docker GPU args. Default: --gpus all
+  GPU_ARGS              Docker GPU args. Default: --gpus all (GPU image), empty (CPU image).
+                        Set GPU_ARGS="" explicitly to disable GPUs on any image.
   EXTRA_DOCKER_ARGS     Extra docker run args.
   EXTRA_MINERU_API_ARGS Extra mineru-api args.
   RECREATE              Remove existing container before deploy. Default: true
@@ -40,6 +59,8 @@ Examples:
   PIPELINE_MODELS_DIR=/mnt/custom/pipeline ./scripts/deploy_mineru_image.sh
   VLM_MODELS_DIR=/mnt/custom/vlm ./scripts/deploy_mineru_image.sh
   MODELS_DIR=/opt/mineru-models IMAGE=ghcr.io/acme/mineru-deploy:mineru-3.1.14 ./scripts/deploy_mineru_image.sh
+  ./scripts/download_mineru_models.sh -m pipeline
+  IMAGE=ghcr.io/acme/mineru-deploy:cpu-latest ./scripts/deploy_mineru_image.sh
   PIPELINE_MODELS_DIR=/mnt/models/pipeline VLM_MODELS_DIR=/mnt/models/vlm ./scripts/deploy_mineru_image.sh
 
 Client usage:
@@ -63,7 +84,15 @@ if [[ ! -d "${PIPELINE_MODELS_DIR}" ]]; then
     exit 1
 fi
 
-if [[ ! -d "${VLM_MODELS_DIR}" ]]; then
+# docker run args replace image CMD; restore CPU defaults when using a CPU tag.
+if _is_cpu_image "${IMAGE}" && [[ -z "${EXTRA_MINERU_API_ARGS}" ]]; then
+    EXTRA_MINERU_API_ARGS="--backend pipeline --device cpu"
+fi
+
+VLM_VOLUME_ARGS=()
+if [[ -d "${VLM_MODELS_DIR}" ]]; then
+    VLM_VOLUME_ARGS=(-v "${VLM_MODELS_DIR}:/models/vlm:ro")
+elif ! _is_cpu_image "${IMAGE}"; then
     echo "ERROR: VLM model directory does not exist: ${VLM_MODELS_DIR}" >&2
     exit 1
 fi
@@ -89,7 +118,7 @@ docker run -d \
     ${GPU_ARGS} \
     -p "${API_HOST_PORT}:${API_CONTAINER_PORT}" \
     -v "${PIPELINE_MODELS_DIR}:/models/pipeline:ro" \
-    -v "${VLM_MODELS_DIR}:/models/vlm:ro" \
+    "${VLM_VOLUME_ARGS[@]}" \
     -v "${DATA_DIR}:/data" \
     ${EXTRA_DOCKER_ARGS} \
     "${IMAGE}" \
