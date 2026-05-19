@@ -75,7 +75,7 @@ CPU deploy uses the **pipeline** backend only; you do **not** need VLM weights. 
 IMAGE=ghcr.io/jimmysitu/mineru-deploy:cpu-latest ./scripts/deploy_mineru_image.sh
 ```
 
-The deploy script detects `cpu-latest` / `*-cpu` tags: no GPU, no VLM directory check, and `--backend pipeline --device cpu`. If `mineru-models/vlm` exists it is still mounted (optional).
+The deploy script detects `cpu-latest` / `*-cpu` tags: no GPU, no VLM directory check, and `--device cpu`. Select the pipeline backend from the client request, for example with `mineru -b pipeline`. If `mineru-models/vlm` exists it is still mounted (optional).
 
 Override API flags with `EXTRA_MINERU_API_ARGS` if needed.
 

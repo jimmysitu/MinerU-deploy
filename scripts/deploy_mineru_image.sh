@@ -34,7 +34,7 @@ usage() {
 Deploy the MinerU API runtime image (mineru-api service).
 
 GPU and CPU images share the same volume layout. For CPU tags (*-cpu, cpu-latest),
-GPU_ARGS defaults to empty, mineru-api gets --backend pipeline --device cpu,
+GPU_ARGS defaults to empty, mineru-api gets --device cpu,
 and VLM weights are optional (pipeline-only download is enough).
 
 GPU image deploy still requires both pipeline/ and vlm/ unless you mount VLM yourself.
@@ -84,9 +84,9 @@ if [[ ! -d "${PIPELINE_MODELS_DIR}" ]]; then
     exit 1
 fi
 
-# docker run args replace image CMD; restore CPU defaults when using a CPU tag.
+# docker run args replace image CMD; restore CPU device default when using a CPU tag.
 if _is_cpu_image "${IMAGE}" && [[ -z "${EXTRA_MINERU_API_ARGS}" ]]; then
-    EXTRA_MINERU_API_ARGS="--backend pipeline --device cpu"
+    EXTRA_MINERU_API_ARGS="--device cpu"
 fi
 
 VLM_VOLUME_ARGS=()
